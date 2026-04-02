@@ -3,6 +3,7 @@ import { join, dirname } from 'node:path';
 import { mkdtempSync, mkdirSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 import { CursorToolEnricher } from '../src/CursorToolEnricher.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,33 @@ function makeFakeCursorDir(): string {
   mkdirSync(sessionDir, { recursive: true });
   copyFileSync(FIXTURE_DB, join(sessionDir, 'store.db'));
   return base;
+}
+
+/** Creates a fresh cursor dir with a DB that has only the tool-call entry, no tool-result. */
+function makeCursorDirWithCallOnly(): { cursorDir: string; dbPath: string } {
+  const base = mkdtempSync(join(tmpdir(), 'enricher-test-'));
+  const sessionDir = join(base, 'chats', 'abc123def', SESSION_ID);
+  mkdirSync(sessionDir, { recursive: true });
+  const dbPath = join(sessionDir, 'store.db');
+  const db = new Database(dbPath);
+  db.exec('CREATE TABLE blobs (id TEXT PRIMARY KEY, data BLOB)');
+  const blob = {
+    role: 'assistant',
+    content: [
+      {
+        type: 'tool-call',
+        toolCallId: KNOWN_TOOL_CALL_ID,
+        toolName: 'Read',
+        args: { path: '/home/user/project/src/index.ts' },
+      },
+    ],
+  };
+  db.prepare('INSERT INTO blobs (id, data) VALUES (?, ?)').run(
+    'blob-call',
+    Buffer.from(JSON.stringify(blob)),
+  );
+  db.close();
+  return { cursorDir: base, dbPath };
 }
 
 describe('CursorToolEnricher', () => {
@@ -71,5 +99,47 @@ describe('CursorToolEnricher', () => {
     // After close, re-discovery should still work
     const result = await enricher.enrich(KNOWN_TOOL_CALL_ID, { timeoutMs: 0 });
     expect(result).not.toBeNull();
+  });
+
+  it('retries when tool-call is found but tool-result not yet written, then returns result', async () => {
+    // Simulates the ACP race condition: Cursor fires "completed" before flushing tool-result to store.db.
+    const { cursorDir, dbPath } = makeCursorDirWithCallOnly();
+    const enricher = new CursorToolEnricher(SESSION_ID, { cursorDir });
+
+    // Write the tool-result blob after 100ms — while the enricher is polling
+    setTimeout(() => {
+      const db = new Database(dbPath);
+      const blob = {
+        role: 'tool',
+        content: [
+          {
+            type: 'tool-result',
+            toolCallId: KNOWN_TOOL_CALL_ID,
+            toolName: 'Read',
+            result: 'export default function main() {}',
+          },
+        ],
+      };
+      db.prepare('INSERT INTO blobs (id, data) VALUES (?, ?)').run(
+        'blob-result',
+        Buffer.from(JSON.stringify(blob)),
+      );
+      db.close();
+    }, 100);
+
+    const result = await enricher.enrich(KNOWN_TOOL_CALL_ID, { timeoutMs: 500 });
+    expect(result).not.toBeNull();
+    expect(result?.result).toBe('export default function main() {}');
+  });
+
+  it('returns partial result (args only) when tool-result never arrives before timeout', async () => {
+    const { cursorDir } = makeCursorDirWithCallOnly();
+    const enricher = new CursorToolEnricher(SESSION_ID, { cursorDir });
+    const result = await enricher.enrich(KNOWN_TOOL_CALL_ID, { timeoutMs: 100 });
+    // Tool-call entry was found, so we get args — but result is null after timeout
+    expect(result).not.toBeNull();
+    expect(result?.toolName).toBe('Read');
+    expect(result?.args.path).toBe('/home/user/project/src/index.ts');
+    expect(result?.result).toBeNull();
   });
 });

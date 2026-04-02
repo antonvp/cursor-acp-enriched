@@ -33,24 +33,32 @@ export class CursorToolEnricher {
     const dbPath = this.getDbPath();
 
     const result = readToolCallBlob(dbPath, toolCallId, maxResultLength);
-    if (result !== null || timeoutMs <= 0) {
+    const hasResult = result !== null && result.result !== null;
+    if (hasResult || timeoutMs <= 0) {
       return result;
     }
 
     // Exponential backoff: 50ms, 100ms, 200ms, 400ms, ...
+    // Retries when blob is not found yet (result === null) OR when the tool-call
+    // entry exists but tool-result hasn't been written yet (result.result === null).
+    // ACP may fire "completed" before Cursor flushes the result blob to store.db.
     const start = Date.now();
     let delay = 50;
+    let best = result;
 
     while (Date.now() - start < timeoutMs) {
       await sleep(Math.min(delay, timeoutMs - (Date.now() - start)));
       const retryResult = readToolCallBlob(dbPath, toolCallId, maxResultLength);
       if (retryResult !== null) {
-        return retryResult;
+        best = retryResult;
+        if (retryResult.result !== null) {
+          return retryResult;
+        }
       }
       delay *= 2;
     }
 
-    return null;
+    return best;
   }
 
   /** Clears the cached store.db path (useful if the session directory moves). */

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-04-02
+
+### Fixed
+
+- `enrich()` now retries when the `tool-call` blob is found but its paired `tool-result` hasn't been written to `store.db` yet — fixes the race condition where Cursor fires "completed" before flushing the result blob, causing `result` to be `null`
+- After timeout, returns the best partial result (with `args` populated) instead of `null` when the tool-call entry was found but result never arrived
+
 ## [0.2.0] - 2026-04-02
 
 ### Added
