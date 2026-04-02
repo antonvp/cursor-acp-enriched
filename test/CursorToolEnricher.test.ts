@@ -28,6 +28,15 @@ describe('CursorToolEnricher', () => {
     expect(result?.toolCallId).toBe(KNOWN_TOOL_CALL_ID);
     expect(result?.toolName).toBe('Read');
     expect(result?.args.path).toBe('/home/user/project/src/index.ts');
+    expect(result?.result).toBe('export default function main() {}');
+  });
+
+  it('result field is truncated when maxResultLength is set', async () => {
+    const cursorDir = makeFakeCursorDir();
+    const enricher = new CursorToolEnricher(SESSION_ID, { cursorDir });
+    // fixture result is "export default function main() {}" — 34 chars
+    const result = await enricher.enrich(KNOWN_TOOL_CALL_ID, { timeoutMs: 0, maxResultLength: 10 });
+    expect(result?.result).toBe('export def' + '…(truncated)');
   });
 
   it('returns null for unknown toolCallId with no timeout', async () => {
