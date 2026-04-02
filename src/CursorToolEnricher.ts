@@ -29,9 +29,10 @@ export class CursorToolEnricher {
    */
   async enrich(toolCallId: string, options?: EnrichOptions): Promise<EnrichedToolCall | null> {
     const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
+    const maxResultLength = options?.maxResultLength ?? 50_000;
     const dbPath = this.getDbPath();
 
-    const result = readToolCallBlob(dbPath, toolCallId);
+    const result = readToolCallBlob(dbPath, toolCallId, maxResultLength);
     if (result !== null || timeoutMs <= 0) {
       return result;
     }
@@ -42,7 +43,7 @@ export class CursorToolEnricher {
 
     while (Date.now() - start < timeoutMs) {
       await sleep(Math.min(delay, timeoutMs - (Date.now() - start)));
-      const retryResult = readToolCallBlob(dbPath, toolCallId);
+      const retryResult = readToolCallBlob(dbPath, toolCallId, maxResultLength);
       if (retryResult !== null) {
         return retryResult;
       }
