@@ -13,6 +13,11 @@ const KNOWN_TOOL_CALL_ID = 'toolu_test_read_fixture_001';
 const KNOWN_TOOL_NAME = 'Read';
 const KNOWN_ARGS = { path: '/home/user/project/src/index.ts' };
 const KNOWN_RESULT = 'export default function main() {}';
+const KNOWN_RICH_RESULT = {
+  workspaceResults: [
+    { filePath: '/home/user/project/src/index.ts', lines: ['export default function main() {}'] },
+  ],
+};
 
 function copyFixture(): string {
   const tmpPath = join(mkdtempSync(join(tmpdir(), 'store-test-')), 'store.db');
@@ -29,6 +34,7 @@ describe('readToolCallBlob', () => {
     expect(result?.toolName).toBe(KNOWN_TOOL_NAME);
     expect(result?.args).toEqual(KNOWN_ARGS);
     expect(result?.result).toBe(KNOWN_RESULT);
+    expect(result?.richResult).toEqual(KNOWN_RICH_RESULT);
   });
 
   it('returns null for unknown toolCallId', () => {
@@ -82,6 +88,7 @@ describe('readToolCallBlob', () => {
     const result = readToolCallBlob(tmpPath, 'toolu_no_result_001');
     expect(result).not.toBeNull();
     expect(result?.result).toBeNull();
+    expect(result?.richResult).toBeNull();
   });
 
   it('truncates result to maxResultLength with …(truncated) suffix', () => {
@@ -119,6 +126,31 @@ describe('readToolCallBlob', () => {
 
     const result = readToolCallBlob(tmpPath, 'toolu_trunc_001', 100);
     expect(result?.result).toBe('x'.repeat(100) + '…(truncated)');
+    expect(result?.richResult).toBeNull();
+  });
+
+  it('returns richResult when highLevelToolCallResult is present (Grep fixture)', () => {
+    const dbPath = copyFixture();
+    const result = readToolCallBlob(dbPath, 'toolu_test_grep_fixture_001');
+    expect(result).not.toBeNull();
+    expect(result?.toolName).toBe('Grep');
+    expect(result?.richResult).toEqual({
+      workspaceResults: [
+        {
+          filePath: 'src/index.ts',
+          matchingLines: [{ lineNumber: 1, content: 'export default function main() {}' }],
+        },
+      ],
+    });
+  });
+
+  it('returns richResult as null when no highLevelToolCallResult on tool blob', () => {
+    const dbPath = copyFixture();
+    const result = readToolCallBlob(dbPath, 'toolu_test_shell_fixture_001');
+    expect(result).not.toBeNull();
+    expect(result?.toolName).toBe('Shell');
+    expect(result?.result).toBe('hello\n');
+    expect(result?.richResult).toBeNull();
   });
 
   it('extracts result from content-array form', () => {
@@ -158,5 +190,6 @@ describe('readToolCallBlob', () => {
 
     const result = readToolCallBlob(tmpPath, 'toolu_array_001');
     expect(result?.result).toBe('Result one. Result two.');
+    expect(result?.richResult).toBeNull();
   });
 });

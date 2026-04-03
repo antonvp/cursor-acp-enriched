@@ -57,6 +57,14 @@ describe('CursorToolEnricher', () => {
     expect(result?.toolName).toBe('Read');
     expect(result?.args.path).toBe('/home/user/project/src/index.ts');
     expect(result?.result).toBe('export default function main() {}');
+    expect(result?.richResult).toEqual({
+      workspaceResults: [
+        {
+          filePath: '/home/user/project/src/index.ts',
+          lines: ['export default function main() {}'],
+        },
+      ],
+    });
   });
 
   it('result field is truncated when maxResultLength is set', async () => {
@@ -119,6 +127,11 @@ describe('CursorToolEnricher', () => {
             result: 'export default function main() {}',
           },
         ],
+        providerOptions: {
+          cursor: {
+            highLevelToolCallResult: { delayed: true },
+          },
+        },
       };
       db.prepare('INSERT INTO blobs (id, data) VALUES (?, ?)').run(
         'blob-result',
@@ -130,6 +143,7 @@ describe('CursorToolEnricher', () => {
     const result = await enricher.enrich(KNOWN_TOOL_CALL_ID, { timeoutMs: 500 });
     expect(result).not.toBeNull();
     expect(result?.result).toBe('export default function main() {}');
+    expect(result?.richResult).toEqual({ delayed: true });
   });
 
   it('returns partial result (args only) when tool-result never arrives before timeout', async () => {
@@ -141,5 +155,32 @@ describe('CursorToolEnricher', () => {
     expect(result?.toolName).toBe('Read');
     expect(result?.args.path).toBe('/home/user/project/src/index.ts');
     expect(result?.result).toBeNull();
+    expect(result?.richResult).toBeNull();
+  });
+
+  it('enriches Grep with richResult containing workspaceResults', async () => {
+    const cursorDir = makeFakeCursorDir();
+    const enricher = new CursorToolEnricher(SESSION_ID, { cursorDir });
+    const result = await enricher.enrich('toolu_test_grep_fixture_001', { timeoutMs: 0 });
+    expect(result).not.toBeNull();
+    expect(result?.toolName).toBe('Grep');
+    expect(result?.richResult).toEqual({
+      workspaceResults: [
+        {
+          filePath: 'src/index.ts',
+          matchingLines: [{ lineNumber: 1, content: 'export default function main() {}' }],
+        },
+      ],
+    });
+  });
+
+  it('returns richResult as null for Shell tool (no highLevelToolCallResult)', async () => {
+    const cursorDir = makeFakeCursorDir();
+    const enricher = new CursorToolEnricher(SESSION_ID, { cursorDir });
+    const result = await enricher.enrich('toolu_test_shell_fixture_001', { timeoutMs: 0 });
+    expect(result).not.toBeNull();
+    expect(result?.toolName).toBe('Shell');
+    expect(result?.result).toBe('hello\n');
+    expect(result?.richResult).toBeNull();
   });
 });

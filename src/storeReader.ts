@@ -19,9 +19,16 @@ interface ContentItem {
   result?: string | ContentResultItem[];
 }
 
+interface ProviderOptions {
+  cursor?: {
+    highLevelToolCallResult?: Record<string, unknown>;
+  };
+}
+
 interface BlobPayload {
   role?: string;
   content?: ContentItem[];
+  providerOptions?: ProviderOptions;
 }
 
 function extractResultString(raw: string | ContentResultItem[]): string {
@@ -45,6 +52,7 @@ export function readToolCallBlob(
 
     let toolCallEntry: { toolName: string; args: Record<string, unknown> } | null = null;
     let resultString: string | null = null;
+    let richResult: Record<string, unknown> | null = null;
 
     for (const row of rows) {
       let payload: BlobPayload;
@@ -69,6 +77,18 @@ export function readToolCallBlob(
           resultString = extractResultString(item.result);
         }
       }
+
+      // highLevelToolCallResult lives on tool-role blobs that carry the result for this toolCallId
+      if (
+        payload.role === 'tool' &&
+        richResult === null &&
+        payload.providerOptions?.cursor?.highLevelToolCallResult !== undefined
+      ) {
+        const hasMatchingContent = payload.content.some((item) => item.toolCallId === toolCallId);
+        if (hasMatchingContent) {
+          richResult = payload.providerOptions.cursor.highLevelToolCallResult;
+        }
+      }
     }
 
     if (toolCallEntry === null) return null;
@@ -83,6 +103,7 @@ export function readToolCallBlob(
       toolName: toolCallEntry.toolName,
       args: toolCallEntry.args,
       result,
+      richResult,
     };
   } finally {
     db.close();

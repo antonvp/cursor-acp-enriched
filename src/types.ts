@@ -3,6 +3,7 @@ export interface EnrichedToolCall {
   toolName: string;
   args: Record<string, unknown>;
   result: string | null;
+  richResult: Record<string, unknown> | null;
 }
 
 export interface EnricherOptions {

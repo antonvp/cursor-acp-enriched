@@ -35,6 +35,7 @@ if (result) {
   console.log(result.toolName); // e.g. "Read"
   console.log(result.args); // e.g. { path: "/foo/bar.ts" }
   console.log(result.result); // e.g. "export default function main() {}"
+  console.log(result.richResult); // structured data from Cursor (see below)
 }
 
 // With a polling timeout (retries until blob appears or timeout expires)
@@ -82,13 +83,45 @@ interface EnrichedToolCall {
   toolName: string;
   args: Record<string, unknown>;
   result: string | null; // tool output; null when no tool-result blob was found
+  richResult: Record<string, unknown> | null; // structured data from highLevelToolCallResult; null when absent
+}
+```
+
+### `richResult` — structured tool output
+
+Cursor's `store.db` stores a `providerOptions.cursor.highLevelToolCallResult` field on tool-role blobs containing rich structured data that goes beyond the plain-text `result`. The enricher extracts this as `richResult`.
+
+Examples of what each tool provides:
+
+| Tool        | `richResult` contains                                |
+| ----------- | ---------------------------------------------------- |
+| Grep / Glob | `workspaceResults` — file paths and matching lines   |
+| WebSearch   | `references` — URLs, titles, and content chunks      |
+| StrReplace  | `diffString` — before/after diff                     |
+| Write       | `diffString` — full file diff                        |
+| Task        | `conversationSteps` — subagent conversation activity |
+| Shell       | exit code and full output (when Cursor includes it)  |
+
+`richResult` is `null` when the tool blob has no `highLevelToolCallResult` (e.g. older Cursor versions, or tools that don't provide it).
+
+```typescript
+const result = await enricher.enrich(toolCallId);
+if (result?.richResult) {
+  // Grep example
+  const workspaceResults = result.richResult.workspaceResults;
+
+  // WebSearch example
+  const references = result.richResult.references;
+
+  // StrReplace/Write example
+  const diff = result.richResult.diffString;
 }
 ```
 
 ## How it works
 
 1. **Path discovery** — scans `~/.cursor/chats/<hash>/<sessionId>/store.db` to find the database for the session
-2. **Blob correlation** — opens the database read-only in WAL mode, iterates all rows in the `blobs` table; finds the `type === "tool-call"` entry for the given `toolCallId` (for args) and the paired `type === "tool-result"` entry (for output)
+2. **Blob correlation** — opens the database read-only in WAL mode, iterates all rows in the `blobs` table; finds the `type === "tool-call"` entry for the given `toolCallId` (for args), the paired `type === "tool-result"` entry (for output), and the `providerOptions.cursor.highLevelToolCallResult` field (for structured rich data)
 3. **Retry** — if the blob isn't present yet (Cursor may not have flushed it), polls with exponential backoff up to the configured timeout
 
 ## Limitations
