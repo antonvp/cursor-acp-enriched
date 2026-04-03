@@ -34,10 +34,14 @@ const result = await enricher.enrich(toolCallId);
 if (result) {
   console.log(result.toolName); // e.g. "Read"
   console.log(result.args); // e.g. { path: "/foo/bar.ts" }
+  console.log(result.result); // e.g. "export default function main() {}"
 }
 
 // With a polling timeout (retries until blob appears or timeout expires)
 const result = await enricher.enrich(toolCallId, { timeoutMs: 2000 });
+
+// Limit result length (default is 50 000 characters)
+const result = await enricher.enrich(toolCallId, { maxResultLength: 5000 });
 ```
 
 ## API reference
@@ -57,9 +61,10 @@ Looks up the tool call in `store.db`. Returns `EnrichedToolCall | null`.
 
 If the blob isn't found immediately and `timeoutMs > 0`, retries with exponential backoff (50ms → 100ms → 200ms…) until the timeout is reached. Useful when the blob may not be written yet.
 
-| Option      | Type     | Description                                |
-| ----------- | -------- | ------------------------------------------ |
-| `timeoutMs` | `number` | Overrides `defaultTimeoutMs` for this call |
+| Option            | Type     | Default  | Description                                       |
+| ----------------- | -------- | -------- | ------------------------------------------------- |
+| `timeoutMs`       | `number` |          | Overrides `defaultTimeoutMs` for this call        |
+| `maxResultLength` | `number` | `50_000` | Truncates the recovered result to this many chars |
 
 ### `enricher.close()`
 
@@ -76,13 +81,14 @@ interface EnrichedToolCall {
   toolCallId: string;
   toolName: string;
   args: Record<string, unknown>;
+  result: string | null; // tool output; null when no tool-result blob was found
 }
 ```
 
 ## How it works
 
 1. **Path discovery** — scans `~/.cursor/chats/<hash>/<sessionId>/store.db` to find the database for the session
-2. **Blob correlation** — opens the database read-only in WAL mode, iterates all rows in the `blobs` table, and searches for a `content[]` entry with `type === "tool-call"` and a matching `toolCallId`
+2. **Blob correlation** — opens the database read-only in WAL mode, iterates all rows in the `blobs` table; finds the `type === "tool-call"` entry for the given `toolCallId` (for args) and the paired `type === "tool-result"` entry (for output)
 3. **Retry** — if the blob isn't present yet (Cursor may not have flushed it), polls with exponential backoff up to the configured timeout
 
 ## Limitations

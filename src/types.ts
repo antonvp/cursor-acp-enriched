@@ -2,6 +2,7 @@ export interface EnrichedToolCall {
   toolCallId: string;
   toolName: string;
   args: Record<string, unknown>;
+  result: string | null;
 }
 
 export interface EnricherOptions {
@@ -11,4 +12,5 @@ export interface EnricherOptions {
 
 export interface EnrichOptions {
   timeoutMs?: number;
+  maxResultLength?: number;
 }
