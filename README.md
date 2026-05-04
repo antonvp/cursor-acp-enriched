@@ -6,13 +6,19 @@ Recovers missing tool call arguments from Cursor's ACP (Agent Client Protocol) e
 
 Cursor's ACP stream emits `tool_call` notifications with an empty `rawInput` field — you can see _that_ a tool was called but not _what arguments_ it received (which file was read, which command was run, etc.).
 
-Cursor does write the full tool call data — including arguments — to a local SQLite database at:
+Cursor does write the full tool call data — including arguments — to a local SQLite database. Recent Cursor builds use a flat layout:
+
+```
+~/.cursor/acp-sessions/<sessionId>/store.db
+```
+
+Older sessions still live under the legacy hashed layout, which this package also resolves transparently:
 
 ```
 ~/.cursor/chats/<hash>/<sessionId>/store.db
 ```
 
-This package reads that database to recover the missing arguments, using the `toolCallId` as the join key between ACP events and store.db blobs.
+This package reads whichever database is present for a given session and recovers the missing arguments, using the `toolCallId` as the join key between ACP events and store.db blobs.
 
 ## Installation
 

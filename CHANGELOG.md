@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-04
+
+### Fixed
+
+- `findSessionStorePath` now resolves Cursor's current on-disk layout — sessions are stored at `~/.cursor/acp-sessions/<sessionId>/store.db`. Earlier versions only scanned the legacy `~/.cursor/chats/<hash>/<sessionId>/store.db` tree, which caused `SessionNotFoundError` for every session created by recent Cursor builds. The legacy layout is still scanned as a fallback so pre-migration sessions keep working.
+
+## [0.3.0] - 2026-04-04
+
+### Added
+
+- `richResult: Record<string, unknown> | null` field on `EnrichedToolCall` — surfaces Cursor's `providerOptions.cursor.highLevelToolCallResult` for tool-role blobs, exposing structured result data (e.g. `workspaceResults` for Read) in addition to the plain-string `result`.
+
 ## [0.2.1] - 2026-04-02
 
 ### Fixed
